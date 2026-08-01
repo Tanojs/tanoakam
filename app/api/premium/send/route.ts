@@ -5,6 +5,7 @@ const BASE_URL =
 
 export async function POST(request: Request) {
   try {
+    // Ambil body request
     const body = await request.json();
 
     const email =
@@ -14,6 +15,8 @@ export async function POST(request: Request) {
 
     // Validasi email
     if (!email) {
+      console.error("[PREMIUM] Email kosong");
+
       return NextResponse.json(
         {
           status: false,
@@ -23,9 +26,11 @@ export async function POST(request: Request) {
       );
     }
 
-    // Cek API Key
-    if (!process.env.API_KEY) {
-      console.error("API_KEY tidak ditemukan di Environment Variables.");
+    // Pastikan API Key tersedia
+    const apiKey = process.env.API_KEY;
+
+    if (!apiKey) {
+      console.error("[PREMIUM] API_KEY tidak ditemukan");
 
       return NextResponse.json(
         {
@@ -36,50 +41,90 @@ export async function POST(request: Request) {
       );
     }
 
-    // Kirim request ke API Premium
-    const response = await fetch(
-      `${BASE_URL}/api/v1/premium/send`,
-      {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${process.env.API_KEY}`,
-        },
-        body: JSON.stringify({
-          email,
-        }),
-        cache: "no-store",
-      },
+    // Endpoint API
+    const endpoint = `${BASE_URL}/api/v1/premium/send`;
+
+    console.log(
+      `[PREMIUM] Request: POST ${endpoint} | Email: ${email}`,
     );
 
-    // Ambil response dari API
-    const data = await response.json().catch(() => ({
-      status: false,
-      message: "Respons API tidak valid.",
-    }));
+    // Request ke API
+    const response = await fetch(endpoint, {
+      method: "POST",
+      headers: {
+        Accept: "application/json",
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify({
+        email,
+      }),
+      cache: "no-store",
+    });
 
-    // Log untuk debugging di Vercel
-    console.log("=== PREMIUM SEND API ===");
-    console.log("Endpoint:", `${BASE_URL}/api/v1/premium/send`);
-    console.log("HTTP Status:", response.status);
-    console.log("Response:", JSON.stringify(data, null, 2));
-    console.log("========================");
+    // Ambil response sebagai text terlebih dahulu
+    const rawResponse = await response.text();
 
-    // Teruskan response API ke frontend
+    console.log(
+      `[PREMIUM] API HTTP Status: ${response.status}`,
+    );
+
+    console.log(
+      `[PREMIUM] API Raw Response: ${rawResponse}`,
+    );
+
+    // Parse JSON
+    let data: any;
+
+    try {
+      data = JSON.parse(rawResponse);
+    } catch {
+      data = {
+        status: false,
+        message: rawResponse || "Respons API kosong atau tidak valid.",
+      };
+    }
+
+    console.log(
+      `[PREMIUM] API Parsed Response: ${JSON.stringify(data)}`,
+    );
+
+    // Jika API mengembalikan error
+    if (!response.ok) {
+      return NextResponse.json(
+        {
+          status: false,
+          message:
+            data?.message ||
+            data?.error?.message ||
+            "API gagal memproses permintaan.",
+          apiStatus: response.status,
+          error: data?.error || data,
+        },
+        {
+          status: response.status,
+        },
+      );
+    }
+
+    // Jika berhasil
     return NextResponse.json(
       {
-        status: response.ok,
+        status: true,
         apiStatus: response.status,
         data,
       },
       {
-        status: response.status,
+        status: 200,
       },
     );
   } catch (error) {
     console.error(
-      "Error saat menghubungi Premium API:",
-      error,
+      `[PREMIUM] Server Error: ${
+        error instanceof Error
+          ? error.message
+          : String(error)
+      }`,
     );
 
     return NextResponse.json(
